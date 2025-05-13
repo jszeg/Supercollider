@@ -1,0 +1,22 @@
+/////////////////////////
+// ARDUINO SENSOR READ //
+////////////////////////
+
+const int dry = 571; // value dry sensor
+const int wet = 252; // value wet sensor
+
+
+void setup() {
+  Serial.begin(115200);
+
+}
+
+void loop() {
+
+  int sensorValue = analogRead(A0);
+  int percentageHumidity = map(sensorValue, wet, dry, 100, 0);
+  
+  Serial.print(percentageHumidity);
+  Serial.print('a');
+  delay(100);
+}
