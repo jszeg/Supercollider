@@ -1,0 +1,112 @@
+
+////////////////////////
+// EARTH SOUNDS - WIP //
+////////////////////////
+
+s.options.sampleRate = 384000;
+s.reboot;
+
+// get list of available ports
+SerialPort.devices;
+
+// define port env variable
+~port = SerialPort.new("COM3", 115200);
+
+// get data from port
+~port.read;
+
+// close the port when updating arduino sketch
+~port.close;
+
+
+// Making a routine that constantly updates a variable with real time seonsor input
+
+(
+~charArray = [ ];
+~getValues = Routine.new({
+	var ascii;
+	{
+		ascii = ~port.read.asAscii;
+		if(ascii.isDecDigit, {~charArray = ~charArray.add(ascii)});
+		if(ascii == $a, {
+			~val = ~charArray.collect(_.digit).convertDigits;
+			~charArray = [ ];
+		});
+	}.loop;
+}).play;
+)
+
+// run repeatedly to update value
+~val;
+
+
+//////////////////////////////////////
+// LOAD SAMPLES
+
+(
+Buffer.freeAll;
+~path = PathName(thisProcess.nowExecutingPath).parentPath;
+b = (
+	slerg: Buffer.read(s, ~path ++ "slerg.wav"),
+	shortslerg: Buffer.read(s, ~path ++ "shortslerg.wav")
+);
+)
+
+
+// check buffers
+b.slerg.play;
+b.shortslerg.play;
+
+
+// SAMPLER
+(
+SynthDef(\read, {
+	arg buf = 0;
+	var sig, phs;
+
+	phs = LFSaw.ar(
+		freq: 1 / BufDur.ir(buf) * \rate.kr(1).lag(\lag.kr(2)),
+	iphase: 2
+	).range(2, BufFrames.ir(buf) - 1);
+
+	sig = BufRd.ar(
+		numChannels: 1,
+		bufnum: buf,
+		phase: phs,
+		loop: 1,
+		interpolation: 1
+	);
+	sig = sig * \amp.kr(0).lag(\amplag.kr(20));
+	sig = Splay.ar(sig);
+	Out.ar(\out.ir(0), sig);
+}).add;
+)
+
+
+// SOUND CHECK
+(
+~sampler = Synth(\read, [buf: b.slerg, rate: 1]);
+~sampler.set(\rate, 0.25, \lag, 1, \amplag, 2, \amp, 2);
+)
+
+(
+~sampler = Synth(\read, [buf: b.shortslerg, rate: 1]);
+~sampler.set(\rate, 0.2, \lag, 1, \amplag, 2, \amp, 5);
+)
+
+
+(
+~sampler = Synth(\read, [buf: b.shortslerg, \lag, 2, \amplag, 5, \amp, 5, rate: ~val.linlin(0, 100, 0.2, 0.5)]);
+
+~ratecontrol = Routine.new({
+	{
+		~sampler.set(\rate, ~val.linlin(0, 100, 0.05, 0.2));
+		0.01.wait;
+	}.loop;
+}).play;
+)
+
+~sampler.set(\amplag, 10, \amp, 10);
+
+
+
