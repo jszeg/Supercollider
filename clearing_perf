@@ -1,0 +1,745 @@
+
+///////////////////////////////////
+// A CLEARING - PERFORMANCE CODE //
+//////////////////////////////////
+
+
+//////////////////////////////////////
+// SETUP
+s.reboot;
+s.meter;
+s.plotTree;
+s.scope;
+
+(
+Server.default.options.inDevice_("JackRouter");
+Server.default.options.outDevice_("JackRouter");
+n = 14;
+s.options.numOutputBusChannels = n;
+s.reboot;
+)
+
+~dirt.stop;
+
+//////////////////////////////////////
+// UTILITY FUNCTIONS
+
+(
+~tempoChange = {
+	arg clock, newTempo, numBeats;
+	var i = 0, tempoArray;
+	tempoArray = Array.interpolation(numBeats, clock.tempo, newTempo/60);
+	clock.schedAbs(clock.nextBar, {
+		clock.tempo_(tempoArray[i]);
+		i = i + 1;
+		if(i < numBeats) {1} {\done.postln};
+	});
+};
+)
+
+
+t = TempoClock.new(112/60).permanent_(true);
+t.tempo_(45/60);
+
+(
+~tempoChange.(t, 112, 128);
+x.set(\lag, 160, \rate, 1);
+y.set(\lag, 160, \rate, 1);
+z.set(\lag, 160, \rate, 1);
+)
+
+(
+~tempoChange.(t, 90, 64);
+x.set(\lag, 160, \rate, 0.75);
+y.set(\lag, 160, \rate, 0.75);
+z.set(\lag, 160, \rate, 0.75);
+)
+
+(
+~tempoChange.(t, 45, 128);
+x.set(\lag, 160, \rate, 0.5);
+y.set(\lag, 160, \rate, 0.5);
+z.set(\lag, 160, \rate, 0.5);
+)
+
+
+
+//////////////////////////////////////
+// LOAD SAMPLES
+
+(
+Buffer.freeAll;
+~path = PathName(thisProcess.nowExecutingPath).parentPath;
+b = (
+	sqforest: Buffer.read(s, ~path ++ "sqforest.wav"),
+	birds: Buffer.read(s, ~path ++ "birds.wav"),
+	crystal: Buffer.read(s, ~path ++ "crystal.wav"),
+	shells: Buffer.read(s, ~path ++ "shells.wav"),
+	bark: Buffer.read(s, ~path ++ "bark.wav")
+);
+)
+
+b.bark.play;
+
+//////////////////////////////////////
+// SYNTHDEFS
+
+(
+SynthDef(\flurbmachine, {
+
+	var sig, car, mod, mod1, env, modenv, mod1env, flutter, noise;
+
+	env = Env.perc(
+		\atk.kr(0.001), \dec.kr(0.5),
+		\ampcrv.kr(-4)
+	).ar(2);
+
+	modenv = Env.perc(
+		\modatk.kr(0.001), \moddec.kr(0.5),
+		\modcrv.kr(-4)
+	).ar(0);
+
+	mod1env = Env.perc(
+		\mod1atk.kr(0.001), \mod1dec.kr(0.5),
+		\mod1crv.kr(-4)
+	).ar(0);
+
+	flutter = LFNoise2.ar(\flutfreq.kr(50), \flutamt.kr(1));
+
+	mod1 = SinOsc.ar(\freq.kr(200) * \m1rat.kr(1), mul: \freq.kr(200) * \m1rat.kr(1) * mod1env);
+	mod1 = mod1* \mod1amt.kr(1);
+
+	mod = SinOsc.ar(\freq.kr(200) * \mrat.kr(1) + mod1, mul: \freq.kr(200) * \mrat.kr(1) * modenv);
+	mod = mod * \modamt.kr(1);
+
+	car = SinOsc.ar([\freq.kr(200) * \crat.kr(1) + mod + flutter, \freq.kr(200) * \crat.kr(1) + mod + flutter + \detune.kr(2)], mul: 0.1);
+
+	noise = PinkNoise.ar(\noiseamt.kr(0)) ! 2;
+	noise = noise * env;
+
+	sig = car * env;
+	sig = sig + noise;
+	sig = (sig * \driveamt.kr(0.2)).tanh;
+	sig = sig * -12.dbamp;
+	sig = sig * \amp.kr(1).lag(\amplag.kr(10));
+	sig = Splay.ar(sig, \spread.kr(1), center: \center.kr(0));
+
+	Out.ar(\out.kr(0), sig);
+
+}).add;
+)
+
+
+// SAMPLER
+
+(
+SynthDef(\read, {
+	arg buf = 0;
+	var sig, phs, ratemod;
+
+	ratemod = LFNoise2.ar(\modfreq.kr(2), \modamp.kr(1));
+
+	phs = LFSaw.ar(
+		freq: 1 / BufDur.ir(buf) * \rate.kr(1).lag(\lag.kr(2)) + ratemod,
+	iphase: 2
+	).range(2, BufFrames.ir(buf) - 1);
+
+	sig = BufRd.ar(
+		numChannels: 2,
+		bufnum: buf,
+		phase: phs,
+		loop: 1,
+		interpolation: 1
+	);
+	sig = sig * \amp.kr(0).lag(\amplag.kr(20));
+	Out.ar(\out.ir(8), sig);
+}).add;
+)
+
+
+v = Synth(\read, [buf: b.crystal, rate: 1]);
+
+v.set(\rate, 0.5, \lag, 10, \amplag, 120, \amp, 0, \modfreq, 0.5, \modamp, 0.025);
+
+w = Synth(\read, [buf: b.shells, rate: 1]);
+
+w.set(\rate, 0.5, \lag, 10, \amplag, 120, \amp, 0, \modfreq, 0.5, \modamp, 0.025);
+
+z = Synth(\read, [buf: b.bark, rate: 1]);
+
+z.set(\rate, 1, \lag, 10, \amplag, 120, \amp, 0, \modfreq, 0.5, \modamp, 0.025);
+
+x = Synth(\read, [buf: b.sqforest, rate: 1]);
+
+x.set(\rate, 1, \lag, 20, \amplag, 120, \amp, 0, \modfreq, 0.1, \modamp, 0.00015);
+
+y = Synth(\read, [buf: b.birds, rate: 1]);
+
+y.set(\rate, 0.5, \lag, 10, \amplag, 60, \amp, 0, \modfreq, 0.1, \modamp, 0.0015);
+
+z = Synth(\read, [buf: b.bark, rate: 1]);
+
+z.set(\rate, 1, \lag, 10, \amplag, 120, \amp, 0, \modfreq, 0.35, \modamp, 0.0075);
+
+
+
+
+// NOTE DATA PDEF
+
+(
+(
+Pdef(
+	\notes,
+	Pbind(
+		\type, \rest,
+		\dur, 0.25,
+		\ctranspose, 24,
+		// \midinote, Pxrand([27, 31, 34, 38, 41], inf), // Ebmaj7
+		// \midinote, Pxrand([29, 32, 36, 39, 43, 46], inf), // Fm11
+		\midinote, Pxrand([31, 34, 38, 41], inf), // Gm7
+		// \midinote, Pxrand([32, 36, 39, 43, 46, 50], inf), // Abmaj#11
+		// \midinote, Pxrand([36, 39, 43, 46, 50], inf), // Cmin9
+
+		// \midinote, Pxrand([32, 35, 39, 41], inf), // Abmin6
+		// \midinote, Pxrand([25, 29, 32, 35, 39], inf), // Db7
+
+		// \midinote, Pxrand([29, 32, 36, 39, 43, 46, 32, 36, 39, 43, 46, 50], inf), // Fm11 + Abmaj#11
+		// \midinote, Pxrand([29, 32, 39, 46, 32, 39, 43], inf), // sparse
+		// \midinote, Pxrand([29, 39, 46, 32], inf), // sparse
+		// \midinote, Pxrand([29, 39], inf), // sparse
+		// \midinote, Pxrand([15, 27], inf), // Eb
+
+).collect({ |ev| ~ev = ev; });
+).play(t, quant: [1, 0, 0.05]);
+);
+
+(
+Pdef(
+	\bassnotes,
+	Pbind(
+		\type, \rest,
+		\dur, 0.25,
+		\ctranspose, 24,
+		// \midinote, Pxrand([15, 27, 31, 34, 38, 41], inf), // Ebmaj7
+		// \midinote, Pxrand([17, 29, 32, 36, 39, 43, 46], inf), // Fm11
+		\midinote, Pxrand([19, 31, 34, 38, 41], inf), // Gm7
+		// \midinote, Pxrand([20, 32, 36, 39, 43, 46, 50], inf), // Abmaj#11
+		// \midinote, Pxrand([24, 36, 39, 43, 46, 50], inf), // Cmin9
+
+		// \midinote, Pxrand([32, 35, 39, 41], inf), // Abmin6
+		// \midinote, Pxrand([25, 29, 32, 35, 39], inf), // Db7
+
+		// \midinote, Pxrand([24, 27, 48, 51, 41, 43], inf), // Eb penta
+		// \midinote, Pxrand([15, 27], inf), // Eb
+
+).collect({ |evb| ~evb = evb; });
+).play(t, quant: [1, 0, 0.05]);
+)
+)
+
+
+
+//////////////////// PDEFS
+// BASS
+
+(
+Pdef(
+	\bass,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pxrand([1, 0.5, 2], inf),
+		\midinote, Pfunc({ ~evb[\midinote] }),
+		\ctranspose, Pfunc({ ~evb[\ctranspose] }) - 36,
+		\crat, Pxrand([1, 2, 4], inf),
+		\mrat, Pxrand([2, 4, 8], inf),
+		\m1rat, Pxrand([24, 48], inf),
+		\atk, Pwhite(0.0001, 0.001, inf),
+		\dec, Pwhite(0.5, 1.25, inf),
+		\moddec, Pwhite(0.01, 0.1, inf),
+		\mod1dec, Pwhite(0.0001, 0.01, inf),
+		\modamt, Pwhite(0.5, 1, inf),
+		\mod1amt, Pwhite(0.5, 1, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0, 0.2, inf),
+		\ampcrv, Pwhite(-4, 0, inf),
+		\driveamt, Pwhite(0.2, 5, inf),
+		\flutamt, Pwhite(0, 5, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\out, 0
+	);
+);
+)
+
+Pdef(\bass).play(t, quant: 4);
+Pdef(\bass).stop;
+
+
+// MIDLAYERS
+
+(
+Pdef(
+	\midlayer1,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pxrand([1, 0.5, 2], inf),
+		\lag, Pwhite(0.0025, 0.035, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }) - 12,
+		\crat, Pseq([1, 2, 4], inf),
+		\mrat, Pseq([2, 4, 8], inf),
+		\m1rat, Pseq([2, 4, 8, 16], inf),
+		\atk, Pwhite(0.0001, 0.01, inf),
+		\center, Pwhite(-1, 1, inf),
+		\dec, Pwhite(0.5, 1.5, inf),
+		\moddec, Pwhite(0.01, 0.05, inf),
+		\mod1dec, Pwhite(0.001, 0.01, inf),
+		\modamt, Pwhite(0.25, 0.75, inf),
+		\mod1amt, Pwhite(0.25, 0.75, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0, 1, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.1, 2.5, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\out, 2
+	);
+);
+)
+
+Pdef(\midlayer1).play(t, quant: 4);
+Pdef(\midlayer1).stop;
+
+
+(
+Pdef(
+	\midlayer2,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pxrand([1, 0.5, 2], inf),
+		\lag, Pwhite(0.0025, 0.035, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }) - 12,
+		\crat, Pxrand([1, 2, 4], inf),
+		\mrat, Pxrand([2, 4, 8], inf),
+		\m1rat, Pxrand([2, 4, 8, 16], inf),
+		\atk, Pwhite(0.0001, 0.01, inf),
+		\center, Pwhite(-1, 1, inf),
+		\dec, Pwhite(0.5, 1.5, inf),
+		\moddec, Pwhite(0.01, 0.05, inf),
+		\mod1dec, Pwhite(0.001, 0.01, inf),
+		\modamt, Pwhite(0.25, 0.75, inf),
+		\mod1amt, Pwhite(0.25, 0.75, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0, 1, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.1, 2.5, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\out, 2
+	);
+);
+)
+
+
+Pdef(\midlayer2).play(t, quant: 4);
+Pdef(\midlayer2).stop;
+
+
+
+// ARPS
+
+(
+Pdef(
+	\arp1,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, 0.5,
+		\lag, Pwhite(0.0035, 0.035, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }) - 12,
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([2, 4, 8, 16], inf),
+		\m1rat, Pxrand([8, 16, 24], inf),
+		\atk, Pwhite(0.006, 0.05, inf),
+		\dec, Pwhite(0.05, 2, inf),
+		\moddec, Pwhite(0.001, 0.0125, inf),
+		\mod1dec, Pwhite(0.0001, 0.01, inf),
+		\modamt, Pwhite(0.5, 0.85, inf),
+		\mod1amt, Pwhite(0.5, 0.85, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2.5, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.1, 2, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\flutfreq, Pwhite(0, 100, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\noiseamt, Pwhite(0.0001, 0.001, inf),
+		\out, 4
+	);
+);
+)
+
+Pdef(\arp1).play(t, quant: 4);
+Pdef(\arp1).stop;
+
+
+(
+Pdef(
+	\arp2,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, 0.5,
+		\lag, Pwhite(0.0035, 0.035, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }) - 12,
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([2, 4, 8, 16], inf),
+		\m1rat, Pxrand([8, 12, 24], inf),
+		\atk, Pwhite(0.006, 0.05, inf),
+		\dec, Pwhite(0.05, 2, inf),
+		\moddec, Pwhite(0.001, 0.0125, inf),
+		\mod1dec, Pwhite(0.0001, 0.01, inf),
+		\modamt, Pwhite(0.5, 0.85, inf),
+		\mod1amt, Pwhite(0.5, 0.85, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2.5, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.1, 2, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\flutfreq, Pwhite(0, 100, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\noiseamt, Pwhite(0.0001, 0.001, inf),
+		\out, 4
+	);
+);
+)
+
+Pdef(\arp2).play(t, quant: 4);
+Pdef(\arp2).stop;
+
+
+// PAD
+
+(
+Pdef(
+	\pad,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, 2.5,
+		\lag, Pwhite(0.0025, 0.025, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }) -12,
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }),
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([4, 8], inf),
+		\m1rat, Pxrand([8, 16], inf),
+		\atk, Pwhite(4, 6, inf),
+		\dec, Pwhite(10, 14, inf),
+	    \modatk, Pwhite(2, 4, inf),
+		\mod1atk, Pwhite(2, 4, inf),
+		\moddec, Pwhite(2, 4, inf),
+		\mod1dec, Pwhite(2, 4, inf),
+		\modamt, Pwhite(0.001, 0.02, inf),
+		\mod1amt, Pwhite(0.001, 0.02, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.025, 0.5, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.5, 2.5, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 5, inf),
+		\flutfreq, Pwhite(5, 25, inf),
+		\amp, Pwhite(0.025, 0.05, inf),
+		\out, 6
+	);
+);
+)
+
+Pdef(\pad).play(t, quant: 1);
+Pdef(\pad).stop;
+
+
+// KLANKSCHAAL
+
+(
+Pdef(
+	\klankschaal,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Prand([5, 6, 7, 8], inf),
+		\lag, Pwhite(0.0025, 0.025, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }),
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pwhite(3.9, 4.1, inf),
+		\m1rat, Pwhite(7.9, 8.1, inf),
+		\atk, Pwhite(0.02, 0.04, inf),
+		\dec, Pwhite(8, 12, inf),
+		\modatk, Pwhite(0.0075, 0.01, inf),
+		\mod1atk, Pwhite(0.0075, 0.01, inf),
+		\moddec, Pwhite(0.005, 0.007, inf),
+		\mod1dec, Pwhite(0.005, 0.007, inf),
+		\modamt, Pwhite(0.4, 0.65, inf),
+		\mod1amt, Pwhite(0.01, 0.1, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2, inf),
+		\ampcrv, Pwhite(-10, -8, inf),
+		\driveamt, Pwhite(0.1, 2, inf),
+		\center, Pwhite(-0.5, 0.5, inf),
+		\flutamt, Pwhite(1, 2, inf),
+		\flutfreq, Pwhite(0, 50, inf),
+		\amp, Pwhite(0.05, 0.1, inf),
+		\out, 4
+	);
+);
+)
+
+
+Pdef(\klankschaal).play(t, quant: 1);
+Pdef(\klankschaal).stop;
+
+
+
+// STRUM
+
+(
+Pdef(
+	\strum,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pwhite(0.01, 0.95, inf).round(0.5),
+		\lag, Pwhite(0.025, 0.25, inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }),
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([2, 4, 8, 16], inf),
+		\m1rat, Pxrand([8, 12, 24], inf),
+		\atk, Pwhite(0.0075, 0.01, inf),
+		\dec, Pwhite(0.1, 0.75, inf),
+		\moddec, Pwhite(0.001, 0.025, inf),
+		\mod1dec, Pwhite(0.0001, 0.01, inf),
+		\modamt, Pwhite(0.1, 0.4, inf),
+		\mod1amt, Pwhite(0.1, 0.4, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2.5, inf),
+		\ampcrv, Pwhite(-8, 0, inf),
+		\driveamt, Pwhite(0.1, 2, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\flutfreq, Pwhite(0, 200, inf),
+		\amp, Pwhite(0.05, 0.1, inf),
+		\noiseamt, Pwhite(0.0001, 0.001, inf),
+		\strum, Pwhite(0.1, 2, inf),
+		\out, 4
+	);
+);
+)
+
+Pdef(\strum).play(t, quant: 4);
+Pdef(\strum).stop;
+
+
+
+
+////////////////// Bass drone
+(
+Pdef(
+	\drone,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, 6,
+		\lag, Pwhite(0.0025, 0.025, inf),
+		\midinote, Pfunc({ ~evb[\midinote] }),
+		\ctranspose, Pfunc({ ~evb[\ctranspose] }) - 12,
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([4, 8, 16], inf),
+		\m1rat, Pxrand([8, 12, 24], inf),
+		\atk, Pwhite(4, 6, inf),
+		\dec, Pwhite(8, 12, inf),
+		\moddec, Pwhite(0.001, 0.025, inf),
+		\mod1dec, Pwhite(0.0001, 0.01),
+		\detune, Pwhite(0.01, 0.5, inf),
+		\ampcrv, Pwhite(-8, -4, inf),
+		\driveamt, Pwhite(0.5, 2.5, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 2, inf),
+		\flutfreq, Pwhite(0, 50, inf),
+		\amp, Pwhite(0.015, 0.05, inf),
+		\out, 6
+	);
+);
+)
+
+Pdef(\drone).play(t, quant: 1);
+Pdef(\drone).stop;
+
+
+
+
+// Partials
+
+(
+Pdef(
+	\partials,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pwhite(0.4, 0.6, inf),
+		\midinote, Pseq([27], inf),
+		\harmonic, Pexprand(1, 3, inf).round,
+		\crat, Pseq([1], inf),
+		\mrat, Pseq([2, 4], inf),
+		\m1rat, Pseq([4, 8], inf),
+		\modatk, Pwhite(2, 4, inf),
+		\mod1atk, Pwhite(2, 4, inf),
+		\moddec, Pwhite(2, 4, inf),
+		\mod1dec, Pwhite(2, 4, inf),
+		\modamt, Pwhite(0.001, 0.1, inf),
+		\mod1amt, Pwhite(0.001, 0.1, inf),
+		\atk, Pwhite(4, 6, inf),
+		\dec, Pwhite(8, 10, inf),
+		\center, Pwhite(-1, 1, inf),
+		\amp, 0.02,
+		\out, 6
+	);
+);
+)
+
+
+Pdef(\partials).play(t, quant: 1);
+Pdef(\partials).stop;
+
+
+
+
+
+
+
+///////////////////////////////////////////////////
+//////////// overige layers
+
+(
+x = Pdef(
+	\polyarp1,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pxrand([0.75], inf),
+		\midinote, Pfunc({ ~ev[\midinote] }) - 12,
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }),
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([2.5, 4.5, 8.5], inf),
+		\m1rat, Pxrand([643, 67], inf),
+		\atk, Pwhite(0.005, 0.007, inf),
+		\dec, Pwhite(0.1, 0.2, inf),
+		\moddec, Pwhite(0.0001, 0.005, inf),
+		\mod1dec, Pwhite(0.0001, 0.005, inf),
+		\modamt, Pwhite(0.25, 0.5, inf),
+		\mod1amt, Pwhite(0.45, 0.5, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2.5, inf),
+		\ampcrv, Pwhite(-8, -6, inf),
+		\driveamt, Pwhite(1, 5, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\flutfreq, Pwhite(0, 200, inf),
+		\amp, Pwhite(0.05, 0.075, inf),
+		\noiseamt, Pwhite(0.001, 0.005, inf),
+		\out, 4
+	);
+);
+)
+
+Pdef(\polyarp1).play(t, quant: 4);
+Pdef(\polyarp1).stop;
+
+
+(
+x = Pdef(
+	\polyarp2,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, Pxrand([1/6, 1/6, 1/6, 1/3], inf),
+		\midinote, Pfunc({ ~ev[\midinote] }),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }),
+		\crat, Pseq([1, 2], inf),
+		\mrat, Pxrand([2.5, 4.5, 8.5], inf),
+		\m1rat, Pxrand([234, 123], inf),
+		\atk, Pwhite(0.005, 0.007, inf),
+		\dec, Pwhite(0.1, 0.2, inf),
+		\moddec, Pwhite(0.0001, 0.005, inf),
+		\mod1dec, Pwhite(0.0001, 0.005, inf),
+		\modamt, Pwhite(0.25, 0.5, inf),
+		\mod1amt, Pwhite(0.45, 0.5, inf),
+		\modcrv, Pwhite(-8, -6, inf),
+		\mod1crv, Pwhite(-8, -6, inf),
+		\detune, Pwhite(0.01, 2.5, inf),
+		\ampcrv, Pwhite(-10, -8, inf),
+		\driveamt, Pwhite(1, 5, inf),
+		\center, Pwhite(-1, 1, inf),
+		\flutamt, Pwhite(1, 7, inf),
+		\flutfreq, Pwhite(0, 200, inf),
+		\amp, Pwhite(0, 0.075, inf),
+		\noiseamt, Pwhite(0.001, 0.005, inf),
+		\out, 4
+	);
+);
+)
+
+Pdef(\polyarp2).play(t, quant: 4);
+Pdef(\polyarp2).stop;
+
+
+
+
+
+// klankschaal fixed mel
+
+(
+Pdef(
+	\klankschaalfixed,
+	Pbind(
+		\instrument, \flurbmachine,
+		\dur, 0.5 * 7,
+		\lag, Pwhite(0.0025, 0.025, inf),
+		\midinote, Pseq([36, 38, 39, 41, 43], inf),
+		\ctranspose, Pfunc({ ~ev[\ctranspose] }) + 12,
+		\crat, Pseq([1], inf),
+		\mrat, Pwhite(1.9, 2.1, inf),
+		\m1rat, Pwhite(7.9, 8.1, inf),
+		\atk, Pwhite(0.02, 0.04, inf),
+		\dec, Pwhite(8, 12, inf),
+		\modatk, Pwhite(0.0075, 0.01, inf),
+		\mod1atk, Pwhite(0.0075, 0.01, inf),
+		\moddec, Pwhite(0.005, 0.007, inf),
+		\mod1dec, Pwhite(0.005, 0.007, inf),
+		\modamt, Pwhite(0.4, 0.65, inf),
+		\mod1amt, Pwhite(0.01, 0.1, inf),
+		\modcrv, Pwhite(-8, -4, inf),
+		\mod1crv, Pwhite(-8, -4, inf),
+		\detune, Pwhite(0.01, 2, inf),
+		\ampcrv, Pwhite(-10, -8, inf),
+		\driveamt, Pwhite(0.1, 2, inf),
+		\center, Pwhite(-0.5, 0.5, inf),
+		\flutamt, Pwhite(1, 2, inf),
+		\flutfreq, Pwhite(0, 50, inf),
+		\amp, Pwhite(0.1, 0.2, inf),
+		\out, 4
+	);
+);
+)
+
+
+Pdef(\klankschaalfixed).play(t, quant: 1);
+Pdef(\klankschaalfixed).stop;
+
+
+
+
