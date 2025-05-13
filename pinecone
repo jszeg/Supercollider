@@ -1,0 +1,111 @@
+
+////////////////////////
+// PINECONE PERF CODE //
+///////////////////////
+
+
+
+s.reboot;
+s.options.sampleRate = 96000;
+
+
+(
+Buffer.freeAll;
+~path = PathName(thisProcess.nowExecutingPath).parentPath;
+b = (
+	pinehand0: Buffer.read(s, ~path ++ "pinehand0.wav"),
+	pinehand1: Buffer.read(s, ~path ++ "pinehand1.wav"),
+	hitex0: Buffer.read(s, ~path ++ "hitex0.wav"),
+	hitex1: Buffer.read(s, ~path ++ "hitex1.wav"),
+	hitex2: Buffer.read(s, ~path ++ "hitex2.wav"),
+	pineplops0: Buffer.read(s, ~path ++ "pineplops0.wav"),
+	pineplops1: Buffer.read(s, ~path ++ "pineplops1.wav"),
+	pineplops2: Buffer.read(s, ~path ++ "pineplops2.wav"),
+	coneslerg0: Buffer.read(s, ~path ++ "coneslerg0.wav")
+);
+)
+
+b.hitex1.play;
+
+
+c = Buffer.readChannel(s,"C:/Users/jonat/Documents/[JS] Supercollider/Porto Recordings/springrain0.WAV");
+
+c.play;
+
+// SAMPLER
+
+(
+SynthDef(\read, {
+	arg buf = 0;
+	var sig, phs, ratemod, panmod;
+
+	ratemod = LFNoise2.ar(\modfreq.kr(2), \modamp.kr(1));
+
+	panmod = LFNoise2.ar(\panfreq.kr(1), \pandepth.kr(1));
+
+	phs = LFSaw.ar(
+		freq: 1 / BufDur.ir(buf) * \rate.kr(1).lag(\lag.kr(2)) + ratemod,
+	iphase: 2
+	).range(2, BufFrames.ir(buf) - 1);
+
+	sig = BufRd.ar(
+		numChannels: 1,
+		bufnum: buf,
+		phase: phs,
+		loop: 1,
+		interpolation: 1
+	);
+	sig = sig = Pan2.ar(sig, panmod);
+	sig = sig * \amp.kr(0).lag(\amplag.kr(20));
+	Out.ar(\out.ir(0), sig);
+}).add;
+)
+
+
+
+a = Synth(\read, [buf: b.pinehand1, rate: 1]);
+
+a.set(\rate, 0.5, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.0025, \modamp, 0.00025);
+
+
+i = Synth(\read, [buf: b.pinehand1, rate: 1]);
+
+i.set(\rate, 0.75, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.0025, \modamp, 0.00025);
+
+
+
+j = Synth(\read, [buf: b.hitex0, rate: 1]);
+
+j.set(\rate, 0.85, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.005, \modamp, 0.0001);
+
+
+d = Synth(\read, [buf: b.hitex1, rate: 1]);
+
+d.set(\rate, 0.75, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.005, \modamp, 0.0002);
+
+
+
+e = Synth(\read, [buf: b.pineplops0, rate: 1]);
+
+e.set(\rate, 1, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.025, \modamp, 0.0025);
+
+
+f = Synth(\read, [buf: b.pineplops1, rate: 1]);
+
+f.set(\rate, 0.75, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.025, \modamp, 0.001);
+
+
+
+g = Synth(\read, [buf: b.coneslerg0, rate: 1]);
+
+g.set(\rate, 2, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.5, \modamp, 0.025);
+
+
+h = Synth(\read, [buf: b.coneslerg0, rate: 1]);
+
+h.set(\rate, 1, \lag, 1, \amplag, 40, \amp, 0, \modfreq, 0.05, \modamp, 0.00025);
+
+
+thisProcess.platform.recordingsDir
+
+
